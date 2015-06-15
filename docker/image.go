@@ -19,7 +19,7 @@ type Image struct {
 func (c *Client) ListImage() ([]Image, error) {
 	method := "GET"
 	url := c.endpoint + "/images/json"
-	body, err := c.do(method, url, DoOption{})
+	body, _, err := c.do(method, url, DoOption{})
 	if err != nil {
 		return nil, err
 	}

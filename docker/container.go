@@ -3,7 +3,9 @@ package docker
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	//"net/http"
 	"time"
 )
 
@@ -208,7 +210,7 @@ func (c *Client) ListContainers() ([]APIContainers, error) {
 	url := c.endpoint + "/containers/json"
 	//multi param: GET /containers/json?a=1&size=1
 
-	body, err := c.do(method, url, DoOption{})
+	body, _, err := c.do(method, url, DoOption{})
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +233,7 @@ func (c *Client) CreateContainers(opt CreateContainerOption) (*Container, error)
 	method := "POST"
 	url := c.endpoint + "/containers/create"
 
-	body, err := c.do(
+	body, _, err := c.do(
 		method, url, DoOption{
 			data: struct {
 				*Config
@@ -256,9 +258,9 @@ type GetContainerLogOption struct {
 	Stderr     bool
 	Timestamps bool
 	Tail       string
-	Container  string
-	OutStream  io.Writer
-	ErrStream  io.Writer
+	Container  string    `qs:"-"`
+	OutStream  io.Writer `qs:"-"`
+	ErrStream  io.Writer `qs:"-"`
 
 	SetRawTerminal bool
 }
@@ -279,4 +281,28 @@ func (c *Client) GetContainerLogs(opt GetContainerLogOption) error {
 		stderr:         opt.ErrStream,
 		setRawTerminal: opt.SetRawTerminal,
 	})
+}
+
+type StopContainerOption struct {
+	Time      int64  `qs:"t"`
+	Container string `qs:"-"`
+}
+
+func (c *Client) StopContainer(opt StopContainerOption) error {
+
+	method := "POST"
+	//	url := c.endpoint + "/containers/" + opt.container + "/stop?" + queryString(opt)
+	url := fmt.Sprintf("%s/containers/%s/stop?%s", c.endpoint, opt.Container, queryString(opt))
+
+	_, code, err := c.do(method, url, DoOption{})
+	if code == 404 { // code == http.StatusNotFound
+		return errors.New("No such id")
+	} else if code == 500 {
+		return errors.New("Server error")
+	} else if err != nil {
+		return err
+	} else {
+		return nil
+	}
+
 }

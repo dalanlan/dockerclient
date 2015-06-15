@@ -9,52 +9,115 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Client struct {
-	httpclient *http.Client
-	endpoint   string
+	httpclient  *http.Client
+	endpoint    string
+	endpointUrl *url.URL
 }
 
 func NewClient(endpoint string) *Client {
-	return &Client{
-		httpclient: &http.Client{}, //http.DefaultClient,
-		endpoint:   endpoint,
+	endpointurl, err := ParseURL(endpoint)
+	if err != nil {
+		log.Fatal("Error new a client")
+		return nil
 	}
+	return &Client{
+		httpclient:  &http.Client{}, //http.DefaultClient,
+		endpoint:    endpoint,
+		endpointUrl: endpointurl,
+	}
+} //Does not support tls for now
+
+func ParseURL(endpoint string) (*url.URL, error) {
+	url, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	if url.Scheme == "unix" || url.Scheme == "http" {
+		return url, nil
+	} else if url.Scheme == "tcp" {
+		url.Scheme = "http"
+		return url, nil
+	} else {
+		return nil, errors.New("Invalid endpoint")
+	}
+
 }
 
 type DoOption struct {
 	data interface{}
 }
 
-func (c *Client) do(method string, url string, opt DoOption) ([]byte, error) {
+func fakeDial(protocol, addr string) (net.Conn, error) {
+	return net.Dial(protocol, addr)
+}
+
+func (c *Client) do(method string, url string, opt DoOption) ([]byte, int, error) {
 	var param io.Reader
 
 	if opt.data != nil {
 		buf, err := json.Marshal(opt.data)
 		if err != nil {
-			return nil, err
+			return nil, -1, err
 		}
 		param = bytes.NewBuffer(buf)
 	}
 
 	req, err := http.NewRequest(method, url, param)
 	if opt.data != nil {
-		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Type", "application/json") //Set sets the header entries associated with key to the single element value. It replaces any existing values associated with key.
+	} else if method == "POST" {
+		req.Header.Set("Content-Type", "plain/text")
 	}
-	resp, err := c.httpclient.Do(req)
 
+	var resp *http.Response
+	if c.endpointUrl.Scheme == "unix" {
+		/*//dial, err := net.Dial("unix", c.endpointUrl.Path)
+		tr := &http.Transport{
+			Dial: func(proto,add )}
+		//tr.Dial("unix", c.endpointUrl.Path)
+		client := &http.Client{Transport: tr}
+
+		resp, err = client.Do(req) */ /*Things are totally wrong here.*/
+
+		// 设置 TimeOut
+		DefaultClient := http.Client{
+			Transport: &http.Transport{
+				Dial: func(netw, addr string) (net.Conn, error) {
+					deadline := time.Now().Add(30 * time.Second)
+					c, err := net.DialTimeout(netw, addr, time.Second*30)
+					if err != nil {
+						return nil, err
+					}
+					c.SetDeadline(deadline)
+					return c, nil
+				},
+			},
+		}
+		// -------------------------------------------
+		// 执行
+		resp, err = DefaultClient.Do(req)
+
+	} else {
+		resp, err = c.httpclient.Do(req)
+	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, -1, err
 	}
-	return body, nil
+	fmt.Println(string(body))
+	return body, resp.StatusCode, nil
 
 }
 
